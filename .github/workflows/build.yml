@@ -14,489 +14,486 @@ jobs:
 
       - name: Write sources
         run: |
-                    cat > Makefile <<'EOF_MAKE'
-         export TARGET = iphone:clang:latest:15.0
-         export ARCHS = arm64 arm64e
-         export DEBUG = 0
+          cat > Makefile <<'EOF_MAKE'
+export TARGET = iphone:clang:latest:15.0
+export ARCHS = arm64 arm64e
+export DEBUG = 0
 
-         include $(THEOS)/makefiles/common.mk
+include $(THEOS)/makefiles/common.mk
 
-         LIBRARY_NAME = BrawlCheat 
-         BrawlCheat_FILES = Tweak.mm
-         BrawlCheat_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore IOKit
-         BrawlCheat_CFLAGS = -fobjc-arc -std=c++17 -Wno-deprecated-declarations
-         BrawlCheat_LDFLAGS = -Wl,-not_for_dyld_shared_cache
+LIBRARY_NAME = BrawlCheat
+BrawlCheat_FILES = Tweak.mm
+BrawlCheat_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore IOKit
+BrawlCheat_CFLAGS = -fobjc-arc -std=c++17 -Wno-deprecated-declarations
+BrawlCheat_LDFLAGS = -Wl,-not_for_dyld_shared_cache
 
-         include $(THEOS_MAKE_PATH)/library.mk
-         EOF_MAKE
-
-
+include $(THEOS_MAKE_PATH)/library.mk
+EOF_MAKE
           cat > Tweak.mm <<'EOF_SRC'
-          #import <UIKit/UIKit.h>
-          #import <Foundation/Foundation.h>
-          #import <CoreGraphics/CoreGraphics.h>
-          #import <cmath>
-          #import <dlfcn.h>
-          #import <mach-o/dyld.h>
-          #import <mach/mach_time.h>
-          #import <string.h>
+#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
+#import <CoreGraphics/CoreGraphics.h>
+#import <cmath>
+#import <dlfcn.h>
+#import <mach-o/dyld.h>
+#import <mach/mach_time.h>
+#import <string.h>
 
-          #pragma clang diagnostic push
-          #pragma clang diagnostic ignored "-Wmodule-import-in-extern-c"
-          #import <IOKit/hid/IOHIDEventSystemClient.h>
-          #pragma clang diagnostic pop
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmodule-import-in-extern-c"
+#import <IOKit/hid/IOHIDEventSystemClient.h>
+#pragma clang diagnostic pop
 
-          extern "C" {
-              IOHIDEventSystemClientRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
-              void IOHIDEventSystemClientDispatchEvent(IOHIDEventSystemClientRef client, IOHIDEventRef event);
-          }
+extern "C" {
+    IOHIDEventSystemClientRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
+    void IOHIDEventSystemClientDispatchEvent(IOHIDEventSystemClientRef client, IOHIDEventRef event);
+}
 
-          static inline AbsoluteTime MachTimeToAbsolute(uint64_t t) {
-              AbsoluteTime at;
-              at.hi = (uint32_t)(t >> 32);
-              at.lo = (uint32_t)(t & 0xFFFFFFFFULL);
-              return at;
-          }
+static inline AbsoluteTime MachTimeToAbsolute(uint64_t t) {
+    AbsoluteTime at;
+    at.hi = (uint32_t)(t >> 32);
+    at.lo = (uint32_t)(t & 0xFFFFFFFFULL);
+    return at;
+}
 
-          #ifndef kIOHIDEventFieldIsBuiltIn
-          #define kIOHIDEventFieldIsBuiltIn ((IOHIDEventField)0xb0008)
-          #endif
+#ifndef kIOHIDEventFieldIsBuiltIn
+#define kIOHIDEventFieldIsBuiltIn ((IOHIDEventField)0xb0008)
+#endif
 
-          #define NS_BATTLE     "GameCore.Battle"
-          #define CLS_BATTLE    "Battle"
-          #define CLS_PLAYER    "Player"
-          #define CLS_PROJ      "Projectile"
-          #define FLD_B_PLAYERS "players"
-          #define FLD_B_PROJS   "projectiles"
-          #define FLD_P_TEAM    "team"
-          #define FLD_P_POS     "position"
-          #define FLD_P_HP      "hp"
-          #define FLD_R_POS     "position"
-          #define FLD_R_VEL     "velocity"
-          #define ATTACK_STICK_X 0.855f
-          #define ATTACK_STICK_Y 0.790f
-          #define MOVE_STICK_X   0.120f
-          #define MOVE_STICK_Y   0.790f
-          #define STICK_RADIUS   0.085f
+#define NS_BATTLE     "GameCore.Battle"
+#define CLS_BATTLE    "Battle"
+#define CLS_PLAYER    "Player"
+#define CLS_PROJ      "Projectile"
+#define FLD_B_PLAYERS "players"
+#define FLD_B_PROJS   "projectiles"
+#define FLD_P_TEAM    "team"
+#define FLD_P_POS     "position"
+#define FLD_P_HP      "hp"
+#define FLD_R_POS     "position"
+#define FLD_R_VEL     "velocity"
+#define ATTACK_STICK_X 0.855f
+#define ATTACK_STICK_Y 0.790f
+#define MOVE_STICK_X   0.120f
+#define MOVE_STICK_Y   0.790f
+#define STICK_RADIUS   0.085f
 
-          typedef struct Il2CppDomain    Il2CppDomain;
-          typedef struct Il2CppAssembly  Il2CppAssembly;
-          typedef struct Il2CppImage     Il2CppImage;
-          typedef struct Il2CppClass     Il2CppClass;
-          typedef struct Il2CppObject    Il2CppObject;
-          typedef struct MethodInfo      MethodInfo;
-          typedef struct FieldInfo       FieldInfo;
+typedef struct Il2CppDomain    Il2CppDomain;
+typedef struct Il2CppAssembly  Il2CppAssembly;
+typedef struct Il2CppImage     Il2CppImage;
+typedef struct Il2CppClass     Il2CppClass;
+typedef struct Il2CppObject    Il2CppObject;
+typedef struct MethodInfo      MethodInfo;
+typedef struct FieldInfo       FieldInfo;
 
-          typedef struct {
-              Il2CppDomain*          (*domain_get)(void);
-              const Il2CppAssembly** (*domain_get_assemblies)(Il2CppDomain*, size_t*);
-              Il2CppImage*           (*assembly_get_image)(const Il2CppAssembly*);
-              Il2CppClass*           (*class_from_name)(const Il2CppImage*, const char*, const char*);
-              FieldInfo*             (*class_get_field_from_name)(Il2CppClass*, const char*);
-              size_t                 (*field_get_offset)(FieldInfo*);
-              MethodInfo*            (*class_get_method_from_name)(Il2CppClass*, const char*, int);
-              Il2CppObject*          (*runtime_invoke)(MethodInfo*, void*, void**, Il2CppObject**);
-              Il2CppDomain*          (*thread_attach)(Il2CppDomain*);
-          } Il2CppAPI;
+typedef struct {
+    Il2CppDomain*          (*domain_get)(void);
+    const Il2CppAssembly** (*domain_get_assemblies)(Il2CppDomain*, size_t*);
+    Il2CppImage*           (*assembly_get_image)(const Il2CppAssembly*);
+    Il2CppClass*           (*class_from_name)(const Il2CppImage*, const char*, const char*);
+    FieldInfo*             (*class_get_field_from_name)(Il2CppClass*, const char*);
+    size_t                 (*field_get_offset)(FieldInfo*);
+    MethodInfo*            (*class_get_method_from_name)(Il2CppClass*, const char*, int);
+    Il2CppObject*          (*runtime_invoke)(MethodInfo*, void*, void**, Il2CppObject**);
+    Il2CppDomain*          (*thread_attach)(Il2CppDomain*);
+} Il2CppAPI;
 
-          static Il2CppAPI    g_api;
-          static Il2CppDomain* g_domain;
+static Il2CppAPI     g_api;
+static Il2CppDomain* g_domain;
 
-          static void* Sym(const char* n) {
-              for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-                  const char* p = _dyld_get_image_name(i);
-                  if (!p) continue;
-                  if (!strstr(p, "UnityFramework") && !strstr(p, "Brawl")) continue;
-                  void* h = dlopen(p, RTLD_NOW);
-                  if (!h) continue;
-                  if (void* s = dlsym(h, n)) return s;
-              }
-              if (void* s = dlsym(RTLD_DEFAULT, n)) return s;
-              if (void* h = dlopen("UnityFramework", RTLD_NOW)) return dlsym(h, n);
-              return NULL;
-          }
+static void* Sym(const char* n) {
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const char* p = _dyld_get_image_name(i);
+        if (!p) continue;
+        if (!strstr(p, "UnityFramework") && !strstr(p, "Brawl")) continue;
+        void* h = dlopen(p, RTLD_NOW);
+        if (!h) continue;
+        if (void* s = dlsym(h, n)) return s;
+    }
+    if (void* s = dlsym(RTLD_DEFAULT, n)) return s;
+    if (void* h = dlopen("UnityFramework", RTLD_NOW)) return dlsym(h, n);
+    return NULL;
+}
 
-          static bool IL2CppInit(void) {
-              if (g_api.domain_get) return true;
-          #define B(f, n) if (!(g_api.f = (__typeof__(g_api.f))Sym(n))) return false
-              B(domain_get,                "il2cpp_domain_get");
-              B(domain_get_assemblies,     "il2cpp_domain_get_assemblies");
-              B(assembly_get_image,        "il2cpp_assembly_get_image");
-              B(class_from_name,           "il2cpp_class_from_name");
-              B(class_get_field_from_name, "il2cpp_class_get_field_from_name");
-              B(field_get_offset,          "il2cpp_field_get_offset");
-              B(class_get_method_from_name,"il2cpp_class_get_method_from_name");
-              B(runtime_invoke,            "il2cpp_runtime_invoke");
-              B(thread_attach,             "il2cpp_thread_attach");
-          #undef B
-              g_domain = g_api.domain_get();
-              if (!g_domain) return false;
-              g_api.thread_attach(g_domain);
-              return true;
-          }
+static bool IL2CppInit(void) {
+    if (g_api.domain_get) return true;
+#define B(f, n) if (!(g_api.f = (__typeof__(g_api.f))Sym(n))) return false
+    B(domain_get,                "il2cpp_domain_get");
+    B(domain_get_assemblies,     "il2cpp_domain_get_assemblies");
+    B(assembly_get_image,        "il2cpp_assembly_get_image");
+    B(class_from_name,           "il2cpp_class_from_name");
+    B(class_get_field_from_name, "il2cpp_class_get_field_from_name");
+    B(field_get_offset,          "il2cpp_field_get_offset");
+    B(class_get_method_from_name,"il2cpp_class_get_method_from_name");
+    B(runtime_invoke,            "il2cpp_runtime_invoke");
+    B(thread_attach,             "il2cpp_thread_attach");
+#undef B
+    g_domain = g_api.domain_get();
+    if (!g_domain) return false;
+    g_api.thread_attach(g_domain);
+    return true;
+}
 
-          static Il2CppClass* FindClass(const char* ns, const char* nm) {
-              if (!g_domain) return NULL;
-              size_t n = 0;
-              const Il2CppAssembly** as = g_api.domain_get_assemblies(g_domain, &n);
-              for (size_t i = 0; i < n; i++) {
-                  Il2CppImage* im = g_api.assembly_get_image(as[i]);
-                  if (!im) continue;
-                  if (Il2CppClass* k = g_api.class_from_name(im, ns, nm)) return k;
-              }
-              return NULL;
-          }
+static Il2CppClass* FindClass(const char* ns, const char* nm) {
+    if (!g_domain) return NULL;
+    size_t n = 0;
+    const Il2CppAssembly** as = g_api.domain_get_assemblies(g_domain, &n);
+    for (size_t i = 0; i < n; i++) {
+        Il2CppImage* im = g_api.assembly_get_image(as[i]);
+        if (!im) continue;
+        if (Il2CppClass* k = g_api.class_from_name(im, ns, nm)) return k;
+    }
+    return NULL;
+}
 
-          static size_t Off(Il2CppClass* k, const char* f) {
-              FieldInfo* fi = k ? g_api.class_get_field_from_name(k, f) : NULL;
-              return fi ? g_api.field_get_offset(fi) : 0;
-          }
+static size_t Off(Il2CppClass* k, const char* f) {
+    FieldInfo* fi = k ? g_api.class_get_field_from_name(k, f) : NULL;
+    return fi ? g_api.field_get_offset(fi) : 0;
+}
 
-          typedef struct { void* klass; void* monitor; void* bounds; size_t len; void* vec[1]; } Il2CppArray;
+typedef struct { void* klass; void* monitor; void* bounds; size_t len; void* vec[1]; } Il2CppArray;
 
-          template<typename T> static inline T Rd(void* b, size_t o) {
-              if (!b) return T{};
-              return *(T*)((char*)b + o);
-          }
+template<typename T> static inline T Rd(void* b, size_t o) {
+    if (!b) return T{};
+    return *(T*)((char*)b + o);
+}
 
-          struct Klass {
-              void* image; void* gc_desc; const char* name; const char* ns;
-              MethodInfo** methods; FieldInfo** fields; void* events;
-              void* props; void* nested; void* impl; void* ifaceoff;
-              void* vtable; void* ifaces; void* virt; void* byval;
-              void* thisarg; void* gcclass; void* elem; void* castclass;
-              void* static_fields;
-          };
+struct Klass {
+    void* image; void* gc_desc; const char* name; const char* ns;
+    MethodInfo** methods; FieldInfo** fields; void* events;
+    void* props; void* nested; void* impl; void* ifaceoff;
+    void* vtable; void* ifaces; void* virt; void* byval;
+    void* thisarg; void* gcclass; void* elem; void* castclass;
+    void* static_fields;
+};
 
-          static void* Static(void* klass, const char* name) {
-              if (!klass) return NULL;
-              FieldInfo* f = g_api.class_get_field_from_name((Il2CppClass*)klass, name);
-              if (!f) return NULL;
-              void* sf = ((Klass*)klass)->static_fields;
-              if (!sf) return NULL;
-              return *(void**)((char*)sf + g_api.field_get_offset(f));
-          }
+static void* Static(void* klass, const char* name) {
+    if (!klass) return NULL;
+    FieldInfo* f = g_api.class_get_field_from_name((Il2CppClass*)klass, name);
+    if (!f) return NULL;
+    void* sf = ((Klass*)klass)->static_fields;
+    if (!sf) return NULL;
+    return *(void**)((char*)sf + g_api.field_get_offset(f));
+}
 
-          static IOHIDEventSystemClientRef g_hid;
+static IOHIDEventSystemClientRef g_hid;
 
-          static void Touch(int id, CGPoint p, bool down, bool up) {
-              if (!g_hid) g_hid = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
-              AbsoluteTime ts = MachTimeToAbsolute(mach_absolute_time());
-              IOHIDEventRef e = IOHIDEventCreateDigitizerFingerEventWithQuality(
-                  kCFAllocatorDefault,
-                  ts,
-                  (uint32_t)(id + 2),
-                  (uint32_t)(id + 2),
-                  (uint32_t)(kIOHIDDigitizerEventTouch | kIOHIDDigitizerEventPosition),
-                  (IOHIDFloat)p.x,
-                  (IOHIDFloat)p.y,
-                  0,
-                  1,
-                  0,
-                  0,
-                  0,
-                  1,
-                  1,
-                  1,
-                  (Boolean)(down || (!down && !up)),
-                  (Boolean)(down || (!down && !up)),
-                  0);
-              if (e) {
-                  IOHIDEventSetIntegerValue(e, kIOHIDEventFieldIsBuiltIn, 1);
-                  IOHIDEventSystemClientDispatchEvent(g_hid, e);
-                  CFRelease(e);
-              }
-          }
+static void Touch(int id, CGPoint p, bool down, bool up) {
+    if (!g_hid) g_hid = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
+    AbsoluteTime ts = MachTimeToAbsolute(mach_absolute_time());
+    IOHIDEventRef e = IOHIDEventCreateDigitizerFingerEventWithQuality(
+        kCFAllocatorDefault,
+        ts,
+        (uint32_t)(id + 2),
+        (uint32_t)(id + 2),
+        (uint32_t)(kIOHIDDigitizerEventTouch | kIOHIDDigitizerEventPosition),
+        (IOHIDFloat)p.x,
+        (IOHIDFloat)p.y,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        (Boolean)(down || (!down && !up)),
+        (Boolean)(down || (!down && !up)),
+        0);
+    if (e) {
+        IOHIDEventSetIntegerValue(e, kIOHIDEventFieldIsBuiltIn, 1);
+        IOHIDEventSystemClientDispatchEvent(g_hid, e);
+        CFRelease(e);
+    }
+}
 
-          typedef struct { float x, y, z; } Vec3;
-          typedef struct { void* obj; Vec3 pos; int team; float hp; } PEnt;
-          typedef struct { void* obj; Vec3 pos; Vec3 vel; } REnt;
+typedef struct { float x, y, z; } Vec3;
+typedef struct { void* obj; Vec3 pos; int team; float hp; } PEnt;
+typedef struct { void* obj; Vec3 pos; Vec3 vel; } REnt;
 
-          static Il2CppClass* kBattle;
-          static Il2CppClass* kPlayer;
-          static Il2CppClass* kProj;
-          static Il2CppClass* kCam;
-          static size_t oPT, oPP, oPH, oBPl, oBPr, oRP, oRV;
-          static MethodInfo* mMain;
-          static MethodInfo* mW2S;
-          static BOOL g_ready;
-          static BOOL g_aiming;
-          static uint64_t g_aimStart;
+static Il2CppClass* kBattle;
+static Il2CppClass* kPlayer;
+static Il2CppClass* kProj;
+static Il2CppClass* kCam;
+static size_t oPT, oPP, oPH, oBPl, oBPr, oRP, oRV;
+static MethodInfo* mMain;
+static MethodInfo* mW2S;
+static BOOL g_ready;
+static BOOL g_aiming;
+static uint64_t g_aimStart;
 
-          static BOOL W2S(Vec3 world, CGPoint* out) {
-              void* cam = NULL;
-              Il2CppObject* ex = NULL;
-              g_api.runtime_invoke(mMain, NULL, NULL, &ex);
-              if (ex || !cam) return NO;
-              void* args[1] = { &world };
-              Il2CppObject* r = g_api.runtime_invoke(mW2S, cam, args, &ex);
-              if (ex || !r) return NO;
-              Vec3* v = (Vec3*)((char*)r + sizeof(void*) * 2);
-              if (v->z <= 0) return NO;
-              CGRect b = UIScreen.mainScreen.bounds;
-              out->x = v->x;
-              out->y = b.size.height - v->y;
-              return YES;
-          }
+static BOOL W2S(Vec3 world, CGPoint* out) {
+    void* cam = NULL;
+    Il2CppObject* ex = NULL;
+    g_api.runtime_invoke(mMain, NULL, NULL, &ex);
+    if (ex || !cam) return NO;
+    void* args[1] = { &world };
+    Il2CppObject* r = g_api.runtime_invoke(mW2S, cam, args, &ex);
+    if (ex || !r) return NO;
+    Vec3* v = (Vec3*)((char*)r + sizeof(void*) * 2);
+    if (v->z <= 0) return NO;
+    CGRect b = UIScreen.mainScreen.bounds;
+    out->x = v->x;
+    out->y = b.size.height - v->y;
+    return YES;
+}
 
-          typedef struct { CGPoint top; CGPoint bot; } ESPBox;
+typedef struct { CGPoint top; CGPoint bot; } ESPBox;
 
-          @interface ESPView : UIView
-          @property (nonatomic, strong) NSMutableArray* boxes;
-          @end
-          @implementation ESPView
-          - (instancetype)initWithFrame:(CGRect)f {
-              self = [super initWithFrame:f];
-              if (self) { self.backgroundColor = UIColor.clearColor; self.userInteractionEnabled = NO; _boxes = [NSMutableArray new]; }
-              return self;
-          }
-          - (void)drawRect:(CGRect)r {
-              CGContextRef ctx = UIGraphicsGetCurrentContext();
-              CGContextSetStrokeColorWithColor(ctx, UIColor.redColor.CGColor);
-              CGContextSetLineWidth(ctx, 2);
-              for (NSValue* v in _boxes) {
-                  ESPBox b; [v getValue:&b];
-                  float w = fabsf((float)(b.top.x - b.bot.x)) * 0.5f;
-                  CGContextStrokeRect(ctx, CGRectMake(b.bot.x - w, b.top.y, w * 2, b.bot.y - b.top.y));
-              }
-          }
-          @end
+@interface ESPView : UIView
+@property (nonatomic, strong) NSMutableArray* boxes;
+@end
+@implementation ESPView
+- (instancetype)initWithFrame:(CGRect)f {
+    self = [super initWithFrame:f];
+    if (self) { self.backgroundColor = UIColor.clearColor; self.userInteractionEnabled = NO; _boxes = [NSMutableArray new]; }
+    return self;
+}
+- (void)drawRect:(CGRect)r {
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSetStrokeColorWithColor(ctx, UIColor.redColor.CGColor);
+    CGContextSetLineWidth(ctx, 2);
+    for (NSValue* v in _boxes) {
+        ESPBox b; [v getValue:&b];
+        float w = fabsf((float)(b.top.x - b.bot.x)) * 0.5f;
+        CGContextStrokeRect(ctx, CGRectMake(b.bot.x - w, b.top.y, w * 2, b.bot.y - b.top.y));
+    }
+}
+@end
 
-          @interface MenuWindow : UIWindow @end
-          @implementation MenuWindow
-          - (UIView*)hitTest:(CGPoint)p withEvent:(UIEvent*)e {
-              UIView* v = [super hitTest:p withEvent:e];
-              return v == self ? nil : v;
-          }
-          @end
+@interface MenuWindow : UIWindow @end
+@implementation MenuWindow
+- (UIView*)hitTest:(CGPoint)p withEvent:(UIEvent*)e {
+    UIView* v = [super hitTest:p withEvent:e];
+    return v == self ? nil : v;
+}
+@end
 
-          @interface PanelView : UIView
-          @property (nonatomic) BOOL esp;
-          @property (nonatomic) BOOL aimbot;
-          @property (nonatomic) BOOL dodge;
-          @end
+@interface PanelView : UIView
+@property (nonatomic) BOOL esp;
+@property (nonatomic) BOOL aimbot;
+@property (nonatomic) BOOL dodge;
+@end
 
-          @interface Cheat : NSObject
-          @property (nonatomic) BOOL esp;
-          @property (nonatomic) BOOL aimbot;
-          @property (nonatomic) BOOL dodge;
-          + (instancetype)shared;
-          - (void)start;
-          @end
+@interface Cheat : NSObject
+@property (nonatomic) BOOL esp;
+@property (nonatomic) BOOL aimbot;
+@property (nonatomic) BOOL dodge;
++ (instancetype)shared;
+- (void)start;
+@end
 
-          static ESPView*   g_esp;
-          static PanelView* g_panel;
+static ESPView*   g_esp;
+static PanelView* g_panel;
 
-          @implementation PanelView
-          - (instancetype)initWithFrame:(CGRect)f {
-              self = [super initWithFrame:f];
-              if (!self) return nil;
-              self.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.55f];
-              self.layer.cornerRadius = 10;
-              self.layer.masksToBounds = YES;
+@implementation PanelView
+- (instancetype)initWithFrame:(CGRect)f {
+    self = [super initWithFrame:f];
+    if (!self) return nil;
+    self.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.55f];
+    self.layer.cornerRadius = 10;
+    self.layer.masksToBounds = YES;
 
-              NSArray* labels = @[@"ESP", @"Aimbot", @"Dodge"];
-              for (int i = 0; i < 3; i++) {
-                  CGRect row = CGRectMake(10, 10 + i * 56, f.size.width - 20, 46);
-                  UILabel* lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 120, 46)];
-                  lbl.text = labels[i]; lbl.textColor = UIColor.whiteColor; lbl.font = [UIFont boldSystemFontOfSize:15];
-                  UISwitch* sw = [[UISwitch alloc] initWithFrame:CGRectMake(row.size.width - 51, 8, 51, 31)];
-                  sw.tag = i;
-                  [sw addTarget:self action:@selector(toggled:) forControlEvents:UIControlEventValueChanged];
-                  UIView* container = [[UIView alloc] initWithFrame:row];
-                  [container addSubview:lbl];
-                  [container addSubview:sw];
-                  [self addSubview:container];
-              }
-              return self;
-          }
-          - (void)toggled:(UISwitch*)sw {
-              Cheat* c = [Cheat shared];
-              switch (sw.tag) {
-                  case 0: c.esp    = sw.isOn; g_esp.hidden = !sw.isOn; break;
-                  case 1: c.aimbot = sw.isOn; break;
-                  case 2: c.dodge  = sw.isOn; break;
-              }
-          }
-          @end
+    NSArray* labels = @[@"ESP", @"Aimbot", @"Dodge"];
+    for (int i = 0; i < 3; i++) {
+        CGRect row = CGRectMake(10, 10 + i * 56, f.size.width - 20, 46);
+        UILabel* lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 120, 46)];
+        lbl.text = labels[i]; lbl.textColor = UIColor.whiteColor; lbl.font = [UIFont boldSystemFontOfSize:15];
+        UISwitch* sw = [[UISwitch alloc] initWithFrame:CGRectMake(row.size.width - 51, 8, 51, 31)];
+        sw.tag = i;
+        [sw addTarget:self action:@selector(toggled:) forControlEvents:UIControlEventValueChanged];
+        UIView* container = [[UIView alloc] initWithFrame:row];
+        [container addSubview:lbl];
+        [container addSubview:sw];
+        [self addSubview:container];
+    }
+    return self;
+}
+- (void)toggled:(UISwitch*)sw {
+    Cheat* c = [Cheat shared];
+    switch (sw.tag) {
+        case 0: c.esp    = sw.isOn; g_esp.hidden = !sw.isOn; break;
+        case 1: c.aimbot = sw.isOn; break;
+        case 2: c.dodge  = sw.isOn; break;
+    }
+}
+@end
 
-          static int Gather(PEnt* local, PEnt* en, int maxE, REnt* pr, int maxP) {
-              int nE = 0, nP = 0;
-              void* inst = Static(kBattle, "instance");
-              Il2CppArray* plArr = inst ? Rd<Il2CppArray*>(inst, oBPl) : NULL;
-              Il2CppArray* prArr = inst ? Rd<Il2CppArray*>(inst, oBPr) : NULL;
+static int Gather(PEnt* local, PEnt* en, int maxE, REnt* pr, int maxP) {
+    int nE = 0, nP = 0;
+    void* inst = Static(kBattle, "instance");
+    Il2CppArray* plArr = inst ? Rd<Il2CppArray*>(inst, oBPl) : NULL;
+    Il2CppArray* prArr = inst ? Rd<Il2CppArray*>(inst, oBPr) : NULL;
 
-              if (plArr) {
-                  for (size_t i = 0; i < plArr->len; i++) {
-                      void* obj = plArr->vec[i];
-                      if (!obj) continue;
-                      int team   = Rd<int>(obj, oPT);
-                      Vec3 pos   = Rd<Vec3>(obj, oPP);
-                      float hp   = Rd<float>(obj, oPH);
-                      if (hp <= 0) continue;
-                      if (team == 0) { local->obj = obj; local->pos = pos; local->team = team; local->hp = hp; }
-                      else if (nE < maxE) { en[nE++] = {obj, pos, team, hp}; }
-                  }
-              }
-              if (prArr) {
-                  for (size_t i = 0; i < prArr->len && nP < maxP; i++) {
-                      void* obj = prArr->vec[i];
-                      if (!obj) continue;
-                      REnt r = { obj, Rd<Vec3>(obj, oRP), Rd<Vec3>(obj, oRV) };
-                      pr[nP++] = r;
-                  }
-              }
-              return nE;
-          }
+    if (plArr) {
+        for (size_t i = 0; i < plArr->len; i++) {
+            void* obj = plArr->vec[i];
+            if (!obj) continue;
+            int team  = Rd<int>(obj, oPT);
+            Vec3 pos  = Rd<Vec3>(obj, oPP);
+            float hp  = Rd<float>(obj, oPH);
+            if (hp <= 0) continue;
+            if (team == 0) { local->obj = obj; local->pos = pos; local->team = team; local->hp = hp; }
+            else if (nE < maxE) { en[nE++] = {obj, pos, team, hp}; }
+        }
+    }
+    if (prArr) {
+        for (size_t i = 0; i < prArr->len && nP < maxP; i++) {
+            void* obj = prArr->vec[i];
+            if (!obj) continue;
+            REnt r = { obj, Rd<Vec3>(obj, oRP), Rd<Vec3>(obj, oRV) };
+            pr[nP++] = r;
+        }
+    }
+    return nE;
+}
 
-          @implementation Cheat
-          + (instancetype)shared {
-              static dispatch_once_t o; static Cheat* c;
-              dispatch_once(&o, ^{ c = [Cheat new]; });
-              return c;
-          }
+@implementation Cheat
++ (instancetype)shared {
+    static dispatch_once_t o; static Cheat* c;
+    dispatch_once(&o, ^{ c = [Cheat new]; });
+    return c;
+}
 
-          - (BOOL)resolve {
-              if (g_ready) return YES;
-              if (!IL2CppInit()) return NO;
-              kBattle = FindClass(NS_BATTLE, CLS_BATTLE);
-              kPlayer = FindClass(NS_BATTLE, CLS_PLAYER);
-              kProj   = FindClass(NS_BATTLE, CLS_PROJ);
-              kCam    = FindClass("UnityEngine", "Camera");
-              if (!kPlayer || !kCam) return NO;
-              oPT = Off(kPlayer, FLD_P_TEAM);
-              oPP = Off(kPlayer, FLD_P_POS);
-              oPH = Off(kPlayer, FLD_P_HP);
-              if (kBattle) { oBPl = Off(kBattle, FLD_B_PLAYERS); oBPr = Off(kBattle, FLD_B_PROJS); }
-              if (kProj)   { oRP  = Off(kProj,   FLD_R_POS);     oRV  = Off(kProj,   FLD_R_VEL); }
-              mMain  = g_api.class_get_method_from_name(kCam, "get_main",           0);
-              mW2S   = g_api.class_get_method_from_name(kCam, "WorldToScreenPoint",  1);
-              g_ready = (mMain && mW2S && oPP);
-              return g_ready;
-          }
+- (BOOL)resolve {
+    if (g_ready) return YES;
+    if (!IL2CppInit()) return NO;
+    kBattle = FindClass(NS_BATTLE, CLS_BATTLE);
+    kPlayer = FindClass(NS_BATTLE, CLS_PLAYER);
+    kProj   = FindClass(NS_BATTLE, CLS_PROJ);
+    kCam    = FindClass("UnityEngine", "Camera");
+    if (!kPlayer || !kCam) return NO;
+    oPT = Off(kPlayer, FLD_P_TEAM);
+    oPP = Off(kPlayer, FLD_P_POS);
+    oPH = Off(kPlayer, FLD_P_HP);
+    if (kBattle) { oBPl = Off(kBattle, FLD_B_PLAYERS); oBPr = Off(kBattle, FLD_B_PROJS); }
+    if (kProj)   { oRP  = Off(kProj,   FLD_R_POS);     oRV  = Off(kProj,   FLD_R_VEL); }
+    mMain  = g_api.class_get_method_from_name(kCam, "get_main",          0);
+    mW2S   = g_api.class_get_method_from_name(kCam, "WorldToScreenPoint", 1);
+    g_ready = (mMain && mW2S && oPP);
+    return g_ready;
+}
 
-          - (void)aim:(CGPoint)t local:(PEnt)l {
-              CGRect  b  = UIScreen.mainScreen.bounds;
-              CGPoint c  = CGPointMake(b.size.width * ATTACK_STICK_X, b.size.height * ATTACK_STICK_Y);
-              CGPoint ls;
-              if (!W2S(l.pos, &ls)) return;
-              float dx = t.x - ls.x, dy = t.y - ls.y;
-              float len = sqrtf(dx * dx + dy * dy);
-              if (len < 1) return;
-              float   r  = b.size.width * STICK_RADIUS;
-              CGPoint to = CGPointMake(c.x + dx / len * r, c.y + dy / len * r);
-              if (!g_aiming) { Touch(0, c, true, false); g_aiming = YES; g_aimStart = mach_absolute_time(); }
-              Touch(0, to, false, false);
-              if ((mach_absolute_time() - g_aimStart) / 1000000 > 120) {
-                  Touch(0, to, false, true);
-                  g_aiming = NO;
-              }
-          }
+- (void)aim:(CGPoint)t local:(PEnt)l {
+    CGRect  b  = UIScreen.mainScreen.bounds;
+    CGPoint c  = CGPointMake(b.size.width * ATTACK_STICK_X, b.size.height * ATTACK_STICK_Y);
+    CGPoint ls;
+    if (!W2S(l.pos, &ls)) return;
+    float dx = t.x - ls.x, dy = t.y - ls.y;
+    float len = sqrtf(dx * dx + dy * dy);
+    if (len < 1) return;
+    float   r  = b.size.width * STICK_RADIUS;
+    CGPoint to = CGPointMake(c.x + dx / len * r, c.y + dy / len * r);
+    if (!g_aiming) { Touch(0, c, true, false); g_aiming = YES; g_aimStart = mach_absolute_time(); }
+    Touch(0, to, false, false);
+    if ((mach_absolute_time() - g_aimStart) / 1000000 > 120) {
+        Touch(0, to, false, true);
+        g_aiming = NO;
+    }
+}
 
-          - (void)dodge:(PEnt)l pr:(REnt*)pr n:(int)n {
-              float ex = 0, ey = 0; BOOL danger = NO;
-              for (int i = 0; i < n; i++) {
-                  float rx = l.pos.x - pr[i].pos.x, ry = l.pos.y - pr[i].pos.y;
-                  float vl = pr[i].vel.x * pr[i].vel.x + pr[i].vel.y * pr[i].vel.y;
-                  if (vl < 0.01f) continue;
-                  float t  = (rx * pr[i].vel.x + ry * pr[i].vel.y) / vl;
-                  if (t < 0 || t > 1.6f) continue;
-                  float cx = rx - pr[i].vel.x * t, cy = ry - pr[i].vel.y * t;
-                  if (sqrtf(cx * cx + cy * cy) > 1.1f) continue;
-                  danger = YES;
-                  ex += (cy > 0 ? -pr[i].vel.y : pr[i].vel.y);
-                  ey += (cx > 0 ? -pr[i].vel.x : pr[i].vel.x);
-              }
-              if (!danger) return;
-              float   len = sqrtf(ex * ex + ey * ey);
-              if (len < 0.01f) return;
-              CGRect  b   = UIScreen.mainScreen.bounds;
-              CGPoint c   = CGPointMake(b.size.width * MOVE_STICK_X, b.size.height * MOVE_STICK_Y);
-              float   r   = b.size.width * STICK_RADIUS;
-              CGPoint to  = CGPointMake(c.x + ex / len * r, c.y + ey / len * r);
-              Touch(1, c,  true,  false);
-              Touch(1, to, false, false);
-          }
+- (void)dodge:(PEnt)l pr:(REnt*)pr n:(int)n {
+    float ex = 0, ey = 0; BOOL danger = NO;
+    for (int i = 0; i < n; i++) {
+        float rx = l.pos.x - pr[i].pos.x, ry = l.pos.y - pr[i].pos.y;
+        float vl = pr[i].vel.x * pr[i].vel.x + pr[i].vel.y * pr[i].vel.y;
+        if (vl < 0.01f) continue;
+        float t  = (rx * pr[i].vel.x + ry * pr[i].vel.y) / vl;
+        if (t < 0 || t > 1.6f) continue;
+        float cx = rx - pr[i].vel.x * t, cy = ry - pr[i].vel.y * t;
+        if (sqrtf(cx * cx + cy * cy) > 1.1f) continue;
+        danger = YES;
+        ex += (cy > 0 ? -pr[i].vel.y : pr[i].vel.y);
+        ey += (cx > 0 ? -pr[i].vel.x : pr[i].vel.x);
+    }
+    if (!danger) return;
+    float   len = sqrtf(ex * ex + ey * ey);
+    if (len < 0.01f) return;
+    CGRect  b   = UIScreen.mainScreen.bounds;
+    CGPoint c   = CGPointMake(b.size.width * MOVE_STICK_X, b.size.height * MOVE_STICK_Y);
+    float   r   = b.size.width * STICK_RADIUS;
+    CGPoint to  = CGPointMake(c.x + ex / len * r, c.y + ey / len * r);
+    Touch(1, c,  true,  false);
+    Touch(1, to, false, false);
+}
 
-          - (void)tick {
-              if (![self resolve]) return;
-              PEnt l{}; PEnt en[16]; REnt pr[64];
-              int nE = Gather(&l, en, 16, pr, 64);
-              if (!l.obj) return;
+- (void)tick {
+    if (![self resolve]) return;
+    PEnt l{}; PEnt en[16]; REnt pr[64];
+    int nE = Gather(&l, en, 16, pr, 64);
+    if (!l.obj) return;
 
-              if (self.esp) {
-                  NSMutableArray* arr = [NSMutableArray new];
-                  for (int i = 0; i < nE; i++) {
-                      Vec3 h = en[i].pos; h.y += 1.6f;
-                      CGPoint a, b;
-                      if (!W2S(h, &a) || !W2S(en[i].pos, &b)) continue;
-                      ESPBox box = { a, b };
-                      [arr addObject:[NSValue valueWithBytes:&box objCType:@encode(ESPBox)]];
-                  }
-                  [g_esp.boxes setArray:arr];
-                  [g_esp setNeedsDisplay];
-              }
+    if (self.esp) {
+        NSMutableArray* arr = [NSMutableArray new];
+        for (int i = 0; i < nE; i++) {
+            Vec3 h = en[i].pos; h.y += 1.6f;
+            CGPoint a, b;
+            if (!W2S(h, &a) || !W2S(en[i].pos, &b)) continue;
+            ESPBox box = { a, b };
+            [arr addObject:[NSValue valueWithBytes:&box objCType:@encode(ESPBox)]];
+        }
+        [g_esp.boxes setArray:arr];
+        [g_esp setNeedsDisplay];
+    }
 
-              if (self.aimbot) {
-                  CGPoint me;
-                  if (W2S(l.pos, &me)) {
-                      int best = -1; float bd = 1e9f;
-                      float fov = UIScreen.mainScreen.bounds.size.width * 0.42f;
-                      for (int i = 0; i < nE; i++) {
-                          CGPoint s;
-                          if (!W2S(en[i].pos, &s)) continue;
-                          float d = hypotf(s.x - me.x, s.y - me.y);
-                          if (d < bd && d < fov) { bd = d; best = i; }
-                      }
-                      if (best >= 0) {
-                          CGPoint s;
-                          if (W2S(en[best].pos, &s)) [self aim:s local:l];
-                      } else if (g_aiming) { Touch(0, CGPointZero, false, true); g_aiming = NO; }
-                  }
-              }
+    if (self.aimbot) {
+        CGPoint me;
+        if (W2S(l.pos, &me)) {
+            int best = -1; float bd = 1e9f;
+            float fov = UIScreen.mainScreen.bounds.size.width * 0.42f;
+            for (int i = 0; i < nE; i++) {
+                CGPoint s;
+                if (!W2S(en[i].pos, &s)) continue;
+                float d = hypotf(s.x - me.x, s.y - me.y);
+                if (d < bd && d < fov) { bd = d; best = i; }
+            }
+            if (best >= 0) {
+                CGPoint s;
+                if (W2S(en[best].pos, &s)) [self aim:s local:l];
+            } else if (g_aiming) { Touch(0, CGPointZero, false, true); g_aiming = NO; }
+        }
+    }
 
-              if (self.dodge) [self dodge:l pr:pr n:64];
-          }
+    if (self.dodge) [self dodge:l pr:pr n:64];
+}
 
-          - (void)start {
-              CADisplayLink* link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick)];
-              [link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
-          }
-          @end
+- (void)start {
+    CADisplayLink* link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick)];
+    [link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+}
+@end
 
-          static void InstallUI(void) {
-              UIWindowScene* sc = nil;
-              for (UIScene* s in UIApplication.sharedApplication.connectedScenes)
-                  if ([s isKindOfClass:UIWindowScene.class]) { sc = (UIWindowScene*)s; break; }
-              UIWindow* host = sc.windows.firstObject;
-              if (!host) return;
-              CGRect b = host.bounds;
+static void InstallUI(void) {
+    UIWindowScene* sc = nil;
+    for (UIScene* s in UIApplication.sharedApplication.connectedScenes)
+        if ([s isKindOfClass:UIWindowScene.class]) { sc = (UIWindowScene*)s; break; }
+    UIWindow* host = sc.windows.firstObject;
+    if (!host) return;
+    CGRect b = host.bounds;
 
-              g_esp = [[ESPView alloc] initWithFrame:b];
-              [host addSubview:g_esp];
+    g_esp = [[ESPView alloc] initWithFrame:b];
+    [host addSubview:g_esp];
 
-              MenuWindow* w = [[MenuWindow alloc] initWithWindowScene:sc];
-              w.frame           = b;
-              w.windowLevel     = UIWindowLevelAlert + 10;
-              w.backgroundColor = UIColor.clearColor;
-              w.hidden          = NO;
-              UIViewController* vc = [UIViewController new];
-              vc.view = [[UIView alloc] initWithFrame:b];
-              vc.view.backgroundColor = UIColor.clearColor;
-              g_panel = [[PanelView alloc] initWithFrame:CGRectMake(b.size.width - 220, 30, 200, 190)];
-              [vc.view addSubview:g_panel];
-              w.rootViewController = vc;
-          }
+    MenuWindow* w = [[MenuWindow alloc] initWithWindowScene:sc];
+    w.frame           = b;
+    w.windowLevel     = UIWindowLevelAlert + 10;
+    w.backgroundColor = UIColor.clearColor;
+    w.hidden          = NO;
+    UIViewController* vc = [UIViewController new];
+    vc.view = [[UIView alloc] initWithFrame:b];
+    vc.view.backgroundColor = UIColor.clearColor;
+    g_panel = [[PanelView alloc] initWithFrame:CGRectMake(b.size.width - 220, 30, 200, 190)];
+    [vc.view addSubview:g_panel];
+    w.rootViewController = vc;
+}
 
-          __attribute__((constructor))
-          static void entry(void) {
-              dispatch_async(dispatch_get_main_queue(), ^{
-                  InstallUI();
-                  [[Cheat shared] start];
-              });
-          }
-          EOF_SRC
-
+__attribute__((constructor))
+static void entry(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        InstallUI();
+        [[Cheat shared] start];
+    });
+}
+EOF_SRC
           ls -la
 
       - name: Install Theos

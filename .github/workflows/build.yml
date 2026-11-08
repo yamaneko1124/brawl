@@ -12,23 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Write sources
+      - name: Write Makefile
+        run: printf '%s\n' 'export TARGET = iphone:clang:latest:15.0' 'export ARCHS = arm64 arm64e' 'export DEBUG = 0' '' 'include $(THEOS)/makefiles/common.mk' '' 'LIBRARY_NAME = BrawlCheat' 'BrawlCheat_FILES = Tweak.mm' 'BrawlCheat_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore IOKit' 'BrawlCheat_CFLAGS = -fobjc-arc -std=c++17 -Wno-deprecated-declarations' 'BrawlCheat_LDFLAGS = -Wl,-not_for_dyld_shared_cache' '' 'include $(THEOS_MAKE_PATH)/library.mk' > Makefile
+
+      - name: Write Tweak
         run: |
-          cat > Makefile <<'EOF_MAKE'
-          export TARGET = iphone:clang:latest:15.0
-          export ARCHS = arm64 arm64e
-          export DEBUG = 0
-
-          include $(THEOS)/makefiles/common.mk
-
-          LIBRARY_NAME = BrawlCheat
-          BrawlCheat_FILES = Tweak.mm
-          BrawlCheat_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore IOKit
-          BrawlCheat_CFLAGS = -fobjc-arc -std=c++17 -Wno-deprecated-declarations
-          BrawlCheat_LDFLAGS = -Wl,-not_for_dyld_shared_cache
-
-          include $(THEOS_MAKE_PATH)/library.mk
-          EOF_MAKE
           cat > Tweak.mm <<'EOF_SRC'
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
@@ -494,7 +482,6 @@ static void entry(void) {
     });
 }
 EOF_SRC
-          ls -la
 
       - name: Install Theos
         uses: Randomblock1/theos-action@v1

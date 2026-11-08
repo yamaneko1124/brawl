@@ -24,8 +24,9 @@ jobs:
           LIBRARY_NAME = BrawlCheat
           BrawlCheat_FILES = Tweak.mm
           BrawlCheat_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore IOKit
-          BrawlCheat_CFLAGS = -fobjc-arc -std=c++17 -Wno-deprecated-declarations
-          BrawlCheat_LDFLAGS = -not_for_dyld_shared_cache
+          BrawlCheat_CFLAGS = -fobjc-arc -std=c++17 -Wno-deprecated-BrawlCheat_LDFLAGS = -Wl,-not_for_dyld_shared_cache
+          BrawlCheat_LDFLAGS = -Wl,-not_for_dyld_shared_cache
+
 
           include $(THEOS_MAKE_PATH)/library.mk
           EOF_MAKE

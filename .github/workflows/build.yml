@@ -13,11 +13,27 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Write Makefile
-        run: printf '%s\n' 'export TARGET = iphone:clang:latest:15.0' 'export ARCHS = arm64 arm64e' 'export DEBUG = 0' '' 'include $(THEOS)/makefiles/common.mk' '' 'LIBRARY_NAME = BrawlCheat' 'BrawlCheat_FILES = Tweak.mm' 'BrawlCheat_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore IOKit' 'BrawlCheat_CFLAGS = -fobjc-arc -std=c++17 -Wno-deprecated-declarations' 'BrawlCheat_LDFLAGS = -Wl,-not_for_dyld_shared_cache' '' 'include $(THEOS_MAKE_PATH)/library.mk' > Makefile
-
-      - name: Write Tweak
         run: |
-          cat > Tweak.mm <<'EOF_SRC'
+          printf '%s\n' \
+            'export TARGET = iphone:clang:latest:15.0' \
+            'export ARCHS = arm64 arm64e' \
+            'export DEBUG = 0' \
+            '' \
+            'include $(THEOS)/makefiles/common.mk' \
+            '' \
+            'LIBRARY_NAME = BrawlCheat' \
+            'BrawlCheat_FILES = Tweak.mm' \
+            'BrawlCheat_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore IOKit' \
+            'BrawlCheat_CFLAGS = -fobjc-arc -std=c++17 -Wno-deprecated-declarations' \
+            'BrawlCheat_LDFLAGS = -Wl,-not_for_dyld_shared_cache' \
+            '' \
+            'include $(THEOS_MAKE_PATH)/library.mk' > Makefile
+
+      - name: Write Tweak.mm
+        run: |
+          python3 - <<'PYEOF'
+          import os
+          src = r"""
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -169,24 +185,12 @@ static void Touch(int id, CGPoint p, bool down, bool up) {
     if (!g_hid) g_hid = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
     AbsoluteTime ts = MachTimeToAbsolute(mach_absolute_time());
     IOHIDEventRef e = IOHIDEventCreateDigitizerFingerEventWithQuality(
-        kCFAllocatorDefault,
-        ts,
-        (uint32_t)(id + 2),
-        (uint32_t)(id + 2),
+        kCFAllocatorDefault, ts,
+        (uint32_t)(id + 2), (uint32_t)(id + 2),
         (uint32_t)(kIOHIDDigitizerEventTouch | kIOHIDDigitizerEventPosition),
-        (IOHIDFloat)p.x,
-        (IOHIDFloat)p.y,
-        0,
-        1,
-        0,
-        0,
-        0,
-        1,
-        1,
-        1,
+        (IOHIDFloat)p.x, (IOHIDFloat)p.y, 0, 1, 0, 0, 0, 1, 1, 1,
         (Boolean)(down || (!down && !up)),
-        (Boolean)(down || (!down && !up)),
-        0);
+        (Boolean)(down || (!down && !up)), 0);
     if (e) {
         IOHIDEventSetIntegerValue(e, kIOHIDEventFieldIsBuiltIn, 1);
         IOHIDEventSystemClientDispatchEvent(g_hid, e);
@@ -280,7 +284,6 @@ static PanelView* g_panel;
     self.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.55f];
     self.layer.cornerRadius = 10;
     self.layer.masksToBounds = YES;
-
     NSArray* labels = @[@"ESP", @"Aimbot", @"Dodge"];
     for (int i = 0; i < 3; i++) {
         CGRect row = CGRectMake(10, 10 + i * 56, f.size.width - 20, 46);
@@ -311,7 +314,6 @@ static int Gather(PEnt* local, PEnt* en, int maxE, REnt* pr, int maxP) {
     void* inst = Static(kBattle, "instance");
     Il2CppArray* plArr = inst ? Rd<Il2CppArray*>(inst, oBPl) : NULL;
     Il2CppArray* prArr = inst ? Rd<Il2CppArray*>(inst, oBPr) : NULL;
-
     if (plArr) {
         for (size_t i = 0; i < plArr->len; i++) {
             void* obj = plArr->vec[i];
@@ -341,7 +343,6 @@ static int Gather(PEnt* local, PEnt* en, int maxE, REnt* pr, int maxP) {
     dispatch_once(&o, ^{ c = [Cheat new]; });
     return c;
 }
-
 - (BOOL)resolve {
     if (g_ready) return YES;
     if (!IL2CppInit()) return NO;
@@ -355,12 +356,11 @@ static int Gather(PEnt* local, PEnt* en, int maxE, REnt* pr, int maxP) {
     oPH = Off(kPlayer, FLD_P_HP);
     if (kBattle) { oBPl = Off(kBattle, FLD_B_PLAYERS); oBPr = Off(kBattle, FLD_B_PROJS); }
     if (kProj)   { oRP  = Off(kProj,   FLD_R_POS);     oRV  = Off(kProj,   FLD_R_VEL); }
-    mMain  = g_api.class_get_method_from_name(kCam, "get_main",          0);
+    mMain  = g_api.class_get_method_from_name(kCam, "get_main",           0);
     mW2S   = g_api.class_get_method_from_name(kCam, "WorldToScreenPoint", 1);
     g_ready = (mMain && mW2S && oPP);
     return g_ready;
 }
-
 - (void)aim:(CGPoint)t local:(PEnt)l {
     CGRect  b  = UIScreen.mainScreen.bounds;
     CGPoint c  = CGPointMake(b.size.width * ATTACK_STICK_X, b.size.height * ATTACK_STICK_Y);
@@ -378,7 +378,6 @@ static int Gather(PEnt* local, PEnt* en, int maxE, REnt* pr, int maxP) {
         g_aiming = NO;
     }
 }
-
 - (void)dodge:(PEnt)l pr:(REnt*)pr n:(int)n {
     float ex = 0, ey = 0; BOOL danger = NO;
     for (int i = 0; i < n; i++) {
@@ -403,13 +402,11 @@ static int Gather(PEnt* local, PEnt* en, int maxE, REnt* pr, int maxP) {
     Touch(1, c,  true,  false);
     Touch(1, to, false, false);
 }
-
 - (void)tick {
     if (![self resolve]) return;
     PEnt l{}; PEnt en[16]; REnt pr[64];
     int nE = Gather(&l, en, 16, pr, 64);
     if (!l.obj) return;
-
     if (self.esp) {
         NSMutableArray* arr = [NSMutableArray new];
         for (int i = 0; i < nE; i++) {
@@ -422,7 +419,6 @@ static int Gather(PEnt* local, PEnt* en, int maxE, REnt* pr, int maxP) {
         [g_esp.boxes setArray:arr];
         [g_esp setNeedsDisplay];
     }
-
     if (self.aimbot) {
         CGPoint me;
         if (W2S(l.pos, &me)) {
@@ -440,10 +436,8 @@ static int Gather(PEnt* local, PEnt* en, int maxE, REnt* pr, int maxP) {
             } else if (g_aiming) { Touch(0, CGPointZero, false, true); g_aiming = NO; }
         }
     }
-
     if (self.dodge) [self dodge:l pr:pr n:64];
 }
-
 - (void)start {
     CADisplayLink* link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick)];
     [link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
@@ -457,10 +451,8 @@ static void InstallUI(void) {
     UIWindow* host = sc.windows.firstObject;
     if (!host) return;
     CGRect b = host.bounds;
-
     g_esp = [[ESPView alloc] initWithFrame:b];
     [host addSubview:g_esp];
-
     MenuWindow* w = [[MenuWindow alloc] initWithWindowScene:sc];
     w.frame           = b;
     w.windowLevel     = UIWindowLevelAlert + 10;
@@ -481,7 +473,11 @@ static void entry(void) {
         [[Cheat shared] start];
     });
 }
-EOF_SRC
+"""
+          with open("Tweak.mm", "w") as f:
+              f.write(src.lstrip("\n"))
+          print("Tweak.mm written:", os.path.getsize("Tweak.mm"), "bytes")
+          PYEOF
 
       - name: Install Theos
         uses: Randomblock1/theos-action@v1

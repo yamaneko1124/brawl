@@ -1,0 +1,546 @@
+name: build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  dylib:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write sources
+        run: |
+          cat > Makefile <<'EOF_MAKE'
+          export TARGET = iphone:clang:latest:15.0
+          export ARCHS = arm64 arm64e
+          export DEBUG = 0
+
+          include $(THEOS)/makefiles/common.mk
+
+          LIBRARY_NAME = BrawlCheat
+          BrawlCheat_FILES = Tweak.mm
+          BrawlCheat_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore IOKit
+          BrawlCheat_CFLAGS = -fobjc-arc -std=c++17 -Wno-deprecated-declarations
+          BrawlCheat_LDFLAGS = -undefined dynamic_lookup
+
+          include $(THEOS_MAKE_PATH)/library.mk
+          EOF_MAKE
+
+          cat > Tweak.mm <<'EOF_SRC'
+          #import <UIKit/UIKit.h>
+          #import <Foundation/Foundation.h>
+          #import <CoreGraphics/CoreGraphics.h>
+          #import <dlfcn.h>
+          #import <mach-o/dyld.h>
+          #import <mach/mach_time.h>
+          #import <string.h>
+          #import <IOKit/hid/IOHIDEventSystemClient.h>
+
+          #define NS_BATTLE   "GameCore.Battle"
+          #define CLS_BATTLE  "Battle"
+          #define CLS_PLAYER  "Player"
+          #define CLS_PROJ    "Projectile"
+          #define FLD_B_PLAYERS "players"
+          #define FLD_B_PROJS   "projectiles"
+          #define FLD_P_TEAM    "team"
+          #define FLD_P_POS     "position"
+          #define FLD_P_HP      "hp"
+          #define FLD_R_POS     "position"
+          #define FLD_R_VEL     "velocity"
+          #define ATTACK_STICK_X 0.855f
+          #define ATTACK_STICK_Y 0.790f
+          #define MOVE_STICK_X   0.120f
+          #define MOVE_STICK_Y   0.790f
+          #define STICK_RADIUS   0.085f
+
+          typedef struct Il2CppDomain Il2CppDomain;
+          typedef struct Il2CppAssembly Il2CppAssembly;
+          typedef struct Il2CppImage Il2CppImage;
+          typedef struct Il2CppClass Il2CppClass;
+          typedef struct Il2CppObject Il2CppObject;
+          typedef struct MethodInfo MethodInfo;
+          typedef struct FieldInfo FieldInfo;
+
+          typedef struct {
+              Il2CppDomain* (*domain_get)(void);
+              const Il2CppAssembly** (*domain_get_assemblies)(Il2CppDomain*, size_t*);
+              Il2CppImage* (*assembly_get_image)(const Il2CppAssembly*);
+              Il2CppClass* (*class_from_name)(const Il2CppImage*, const char*, const char*);
+              FieldInfo* (*class_get_field_from_name)(Il2CppClass*, const char*);
+              size_t (*field_get_offset)(FieldInfo*);
+              MethodInfo* (*class_get_method_from_name)(Il2CppClass*, const char*, int);
+              Il2CppObject* (*runtime_invoke)(MethodInfo*, void*, void**, Il2CppObject**);
+              Il2CppDomain* (*thread_attach)(Il2CppDomain*);
+          } Il2CppAPI;
+
+          static Il2CppAPI g_api;
+          static Il2CppDomain* g_domain;
+
+          static void* Sym(const char* n) {
+              for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+                  const char* p = _dyld_get_image_name(i);
+                  if (!p) continue;
+                  if (!strstr(p, "UnityFramework") && !strstr(p, "Brawl")) continue;
+                  void* h = dlopen(p, RTLD_NOW);
+                  if (!h) continue;
+                  if (void* s = dlsym(h, n)) return s;
+              }
+              if (void* s = dlsym(RTLD_DEFAULT, n)) return s;
+              if (void* h = dlopen("UnityFramework", RTLD_NOW)) return dlsym(h, n);
+              return NULL;
+          }
+
+          static bool IL2CppInit(void) {
+              if (g_api.domain_get) return true;
+          #define B(f, n) if (!(g_api.f = (__typeof__(g_api.f))Sym(n))) return false
+              B(domain_get, "il2cpp_domain_get");
+              B(domain_get_assemblies, "il2cpp_domain_get_assemblies");
+              B(assembly_get_image, "il2cpp_assembly_get_image");
+              B(class_from_name, "il2cpp_class_from_name");
+              B(class_get_field_from_name, "il2cpp_class_get_field_from_name");
+              B(field_get_offset, "il2cpp_field_get_offset");
+              B(class_get_method_from_name, "il2cpp_class_get_method_from_name");
+              B(runtime_invoke, "il2cpp_runtime_invoke");
+              B(thread_attach, "il2cpp_thread_attach");
+          #undef B
+              g_domain = g_api.domain_get();
+              if (!g_domain) return false;
+              g_api.thread_attach(g_domain);
+              return true;
+          }
+
+          static Il2CppClass* FindClass(const char* ns, const char* nm) {
+              if (!g_domain) return NULL;
+              size_t n = 0;
+              const Il2CppAssembly** as = g_api.domain_get_assemblies(g_domain, &n);
+              for (size_t i = 0; i < n; i++) {
+                  Il2CppImage* im = g_api.assembly_get_image(as[i]);
+                  if (!im) continue;
+                  if (Il2CppClass* k = g_api.class_from_name(im, ns, nm)) return k;
+              }
+              return NULL;
+          }
+
+          static size_t Off(Il2CppClass* k, const char* f) {
+              FieldInfo* fi = k ? g_api.class_get_field_from_name(k, f) : NULL;
+              return fi ? g_api.field_get_offset(fi) : 0;
+          }
+
+          typedef struct { void* klass; void* monitor; void* bounds; size_t len; void* vec[1]; } Il2CppArray;
+
+          template<typename T> static inline T Rd(void* b, size_t o) {
+              if (!b) return T{};
+              return *(T*)((char*)b + o);
+          }
+
+          struct Klass {
+              void* image; void* gc_desc; const char* name; const char* ns;
+              MethodInfo** methods; FieldInfo** fields; void* events;
+              void* props; void* nested; void* impl; void* ifaceoff;
+              void* vtable; void* ifaces; void* virt; void* byval;
+              void* thisarg; void* gcclass; void* elem; void* castclass;
+              void* static_fields;
+          };
+
+          static void* Static(void* klass, const char* name) {
+              if (!klass) return NULL;
+              FieldInfo* f = g_api.class_get_field_from_name((Il2CppClass*)klass, name);
+              if (!f) return NULL;
+              void* sf = ((Klass*)klass)->static_fields;
+              if (!sf) return NULL;
+              return *(void**)((char*)sf + g_api.field_get_offset(f));
+          }
+
+          typedef struct __IOHIDEvent* IOHIDEventRef;
+          typedef struct __IOHIDEventSystemClient* IOHIDEventSystemClientRef;
+
+          extern "C" {
+          IOHIDEventRef IOHIDEventCreateDigitizerFingerEventWithQuality(CFAllocatorRef, AbsoluteTime,
+              uint32_t, uint32_t, IOHIDDigitizerTransducerType, float, float, float, float,
+              float, float, float, Boolean, Boolean, uint32_t);
+          void IOHIDEventSetIntegerValue(IOHIDEventRef, int32_t, int64_t);
+          void IOHIDEventSystemClientDispatchEvent(IOHIDEventSystemClientRef, IOHIDEventRef);
+          }
+
+          static IOHIDEventSystemClientRef g_hid;
+          static void Touch(int id, CGPoint p, bool down, bool up) {
+              if (!g_hid) g_hid = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
+              IOHIDEventRef e = IOHIDEventCreateDigitizerFingerEventWithQuality(
+                  kCFAllocatorDefault, mach_absolute_time(), 0, id + 1,
+                  kIOHIDDigitizerTransducerTypeFinger, p.x, p.y, 0, 1.0f, 1.0f, 0, 0, 1.0f,
+                  down, up, 0);
+              if (!e) return;
+              IOHIDEventSetIntegerValue(e, kIOHIDEventFieldIsBuiltIn, 1);
+              IOHIDEventSystemClientDispatchEvent(g_hid, e);
+              CFRelease(e);
+          }
+
+          typedef struct { CGPoint a, b; } ESPBox;
+
+          @class Cheat;
+
+          @interface ESPView : UIView
+          @property (nonatomic, strong) NSMutableArray* boxes;
+          @end
+
+          static ESPView* g_esp;
+          static UIView* g_panel;
+
+          @implementation ESPView
+          - (id)initWithFrame:(CGRect)r {
+              if ((self = [super initWithFrame:r])) {
+                  self.backgroundColor = UIColor.clearColor;
+                  self.userInteractionEnabled = NO;
+                  self.boxes = [NSMutableArray new];
+              }
+              return self;
+          }
+          - (void)drawRect:(CGRect)r {
+              CGContextRef c = UIGraphicsGetCurrentContext();
+              CGContextSetLineWidth(c, 1.5);
+              CGContextSetStrokeColorWithColor(c, UIColor.greenColor.CGColor);
+              for (NSValue* v in self.boxes) {
+                  ESPBox b; [v getValue:&b];
+                  CGContextStrokeRect(c, CGRectMake(b.a.x, b.a.y, b.b.x - b.a.x, b.b.y - b.a.y));
+              }
+          }
+          @end
+
+          @interface MenuWindow : UIWindow @end
+          @implementation MenuWindow
+          - (UIView*)hitTest:(CGPoint)p withEvent:(UIEvent*)e {
+              UIView* v = [super hitTest:p withEvent:e];
+              return (v == self.rootViewController.view) ? nil : v;
+          }
+          @end
+
+          @interface PanelView : UIView @end
+          @implementation PanelView {
+              CGPoint _grab;
+          }
+          - (id)initWithFrame:(CGRect)f {
+              if ((self = [super initWithFrame:f])) {
+                  self.backgroundColor = [UIColor colorWithWhite:0.08 alpha:0.92];
+                  self.layer.cornerRadius = 12;
+                  self.layer.borderWidth = 1;
+                  self.layer.borderColor = UIColor.greenColor.CGColor;
+
+                  UILabel* t = [[UILabel alloc] initWithFrame:CGRectMake(10, 6, f.size.width - 20, 24)];
+                  t.text = @"BrawlCheat";
+                  t.textColor = UIColor.greenColor;
+                  t.font = [UIFont boldSystemFontOfSize:15];
+                  [self addSubview:t];
+
+                  NSArray* names = @[@"ESP", @"Aimbot", @"Bullet Dodge", @"Auto Shoot"];
+                  for (int i = 0; i < 4; i++) {
+                      UILabel* l = [[UILabel alloc] initWithFrame:CGRectMake(10, 38 + i * 34, 130, 26)];
+                      l.text = names[i];
+                      l.textColor = UIColor.whiteColor;
+                      l.font = [UIFont systemFontOfSize:13];
+                      [self addSubview:l];
+
+                      UISwitch* s = [[UISwitch alloc] initWithFrame:CGRectMake(f.size.width - 62, 35 + i * 34, 51, 31)];
+                      s.tag = i;
+                      s.transform = CGAffineTransformMakeScale(0.75, 0.75);
+                      [s addTarget:self action:@selector(onToggle:) forControlEvents:UIControlEventValueChanged];
+                      [self addSubview:s];
+                  }
+              }
+              return self;
+          }
+          - (void)onToggle:(UISwitch*)s {
+              Cheat* c = [Cheat shared];
+              switch (s.tag) {
+                  case 0: c.esp = s.isOn; break;
+                  case 1: c.aimbot = s.isOn; break;
+                  case 2: c.dodge = s.isOn; break;
+                  case 3: c.autoShoot = s.isOn; break;
+              }
+          }
+          - (void)touchesBegan:(NSSet<UITouch*>*)t withEvent:(UIEvent*)e {
+              _grab = [[t anyObject] locationInView:self.superview];
+          }
+          - (void)touchesMoved:(NSSet<UITouch*>*)t withEvent:(UIEvent*)e {
+              CGPoint p = [[t anyObject] locationInView:self.superview];
+              CGRect f = self.frame;
+              f.origin.x += p.x - _grab.x;
+              f.origin.y += p.y - _grab.y;
+              self.frame = f;
+              _grab = p;
+          }
+          @end
+
+          typedef struct { float x, y, z; } Vec3;
+          typedef struct { void* obj; Vec3 pos; int team; float hp; } PEnt;
+          typedef struct { void* obj; Vec3 pos; Vec3 vel; } REnt;
+
+          @interface Cheat : NSObject
+          @property (nonatomic) BOOL esp, aimbot, dodge, autoShoot;
+          + (instancetype)shared;
+          - (void)start;
+          @end
+
+          static Il2CppClass *kBattle, *kPlayer, *kProj, *kCam;
+          static size_t oBPl, oBPr, oPT, oPP, oPH, oRP, oRV;
+          static MethodInfo *mW2S, *mMain;
+          static BOOL g_ready;
+          static BOOL g_aiming;
+          static uint64_t g_aimStart;
+
+          static BOOL W2S(Vec3 w, CGPoint* out) {
+              void* cam = Static(kCam, "main");
+              if (!cam) {
+                  Il2CppObject* ex = NULL;
+                  void* p[2] = { &cam, NULL };
+                  cam = g_api.runtime_invoke(mMain, NULL, p, &ex);
+                  if (!cam) return NO;
+              }
+              Vec3 s = {};
+              void* pr[2] = { &s, &w };
+              Il2CppObject* ex = NULL;
+              g_api.runtime_invoke(mW2S, cam, pr, &ex);
+              if (s.z < 0) return NO;
+              CGFloat sc = UIScreen.mainScreen.scale;
+              out->x = s.x / sc;
+              out->y = UIScreen.mainScreen.bounds.size.height - s.y / sc;
+              return YES;
+          }
+
+          static int Gather(PEnt* local, PEnt* en, int maxE, REnt* pr, int maxP) {
+              void* battle = Static(kBattle, "instance");
+              if (!battle) return 0;
+
+              PEnt all[32]; int nAll = 0;
+              void* plist = Rd<void*>(battle, oBPl);
+              if (plist) {
+                  Il2CppArray* arr = (Il2CppArray*)plist;
+                  if (arr->len == 0 || arr->len > 64) {
+                      void* it = Rd<void*>(plist, 0x10);
+                      if (it) arr = (Il2CppArray*)it;
+                  }
+                  for (size_t i = 0; i < arr->len && i < 32; i++) {
+                      void* o = arr->vec[i];
+                      if (!o) continue;
+                      PEnt p{};
+                      p.obj = o;
+                      p.pos = Rd<Vec3>(o, oPP);
+                      p.team = Rd<int>(o, oPT);
+                      p.hp = Rd<float>(o, oPH);
+                      all[nAll++] = p;
+                  }
+              }
+
+              int myTeam = -1;
+              for (int i = 0; i < nAll; i++) if (all[i].team >= 0) { myTeam = all[i].team; break; }
+              for (int i = 0; i < nAll; i++)
+                  if (all[i].team == myTeam && all[i].hp > 0) { *local = all[i]; break; }
+
+              int nE = 0;
+              for (int i = 0; i < nAll && nE < maxE; i++)
+                  if (all[i].team != myTeam && all[i].hp > 0) en[nE++] = all[i];
+
+              void* rlist = Rd<void*>(battle, oBPr);
+              int nP = 0;
+              if (rlist) {
+                  Il2CppArray* arr = (Il2CppArray*)rlist;
+                  if (arr->len == 0 || arr->len > 256) {
+                      void* it = Rd<void*>(rlist, 0x10);
+                      if (it) arr = (Il2CppArray*)it;
+                  }
+                  for (size_t i = 0; i < arr->len && i < 64 && nP < maxP; i++) {
+                      void* o = arr->vec[i];
+                      if (!o) continue;
+                      REnt r{};
+                      r.obj = o;
+                      r.pos = Rd<Vec3>(o, oRP);
+                      r.vel = Rd<Vec3>(o, oRV);
+                      pr[nP++] = r;
+                  }
+              }
+              return nE;
+          }
+
+          @implementation Cheat
+          + (instancetype)shared {
+              static dispatch_once_t o; static Cheat* c;
+              dispatch_once(&o, ^{ c = [Cheat new]; });
+              return c;
+          }
+
+          - (BOOL)resolve {
+              if (g_ready) return YES;
+              if (!IL2CppInit()) return NO;
+              kBattle = FindClass(NS_BATTLE, CLS_BATTLE);
+              kPlayer = FindClass(NS_BATTLE, CLS_PLAYER);
+              kProj   = FindClass(NS_BATTLE, CLS_PROJ);
+              kCam    = FindClass("UnityEngine", "Camera");
+              if (!kPlayer || !kCam) return NO;
+              oPT = Off(kPlayer, FLD_P_TEAM);
+              oPP = Off(kPlayer, FLD_P_POS);
+              oPH = Off(kPlayer, FLD_P_HP);
+              if (kBattle) { oBPl = Off(kBattle, FLD_B_PLAYERS); oBPr = Off(kBattle, FLD_B_PROJS); }
+              if (kProj) { oRP = Off(kProj, FLD_R_POS); oRV = Off(kProj, FLD_R_VEL); }
+              mMain = g_api.class_get_method_from_name(kCam, "get_main", 0);
+              mW2S  = g_api.class_get_method_from_name(kCam, "WorldToScreenPoint", 1);
+              g_ready = (mMain && mW2S && oPP);
+              return g_ready;
+          }
+
+          - (void)aim:(CGPoint)t local:(PEnt)l {
+              CGRect b = UIScreen.mainScreen.bounds;
+              CGPoint c = CGPointMake(b.size.width * ATTACK_STICK_X, b.size.height * ATTACK_STICK_Y);
+              CGPoint ls;
+              if (!W2S(l.pos, &ls)) return;
+              float dx = t.x - ls.x, dy = t.y - ls.y;
+              float len = sqrtf(dx * dx + dy * dy);
+              if (len < 1) return;
+              float r = b.size.width * STICK_RADIUS;
+              CGPoint to = CGPointMake(c.x + dx / len * r, c.y + dy / len * r);
+              if (!g_aiming) { Touch(0, c, true, false); g_aiming = YES; g_aimStart = mach_absolute_time(); }
+              Touch(0, to, false, false);
+              if ((mach_absolute_time() - g_aimStart) / 1000000 > 120) {
+                  Touch(0, to, false, true);
+                  g_aiming = NO;
+              }
+          }
+
+          - (void)dodge:(PEnt)l pr:(REnt*)pr n:(int)n {
+              float ex = 0, ey = 0; BOOL danger = NO;
+              for (int i = 0; i < n; i++) {
+                  float rx = l.pos.x - pr[i].pos.x, ry = l.pos.y - pr[i].pos.y;
+                  float vl = pr[i].vel.x * pr[i].vel.x + pr[i].vel.y * pr[i].vel.y;
+                  if (vl < 0.01f) continue;
+                  float t = (rx * pr[i].vel.x + ry * pr[i].vel.y) / vl;
+                  if (t < 0 || t > 1.6f) continue;
+                  float cx = rx - pr[i].vel.x * t, cy = ry - pr[i].vel.y * t;
+                  if (sqrtf(cx * cx + cy * cy) > 1.1f) continue;
+                  danger = YES;
+                  ex += (cy > 0 ? -pr[i].vel.y : pr[i].vel.y);
+                  ey += (cx > 0 ? -pr[i].vel.x : pr[i].vel.x);
+              }
+              if (!danger) return;
+              float len = sqrtf(ex * ex + ey * ey);
+              if (len < 0.01f) return;
+              CGRect b = UIScreen.mainScreen.bounds;
+              CGPoint c = CGPointMake(b.size.width * MOVE_STICK_X, b.size.height * MOVE_STICK_Y);
+              float r = b.size.width * STICK_RADIUS;
+              CGPoint to = CGPointMake(c.x + ex / len * r, c.y + ey / len * r);
+              Touch(1, c, true, false);
+              Touch(1, to, false, false);
+          }
+
+          - (void)tick {
+              if (![self resolve]) return;
+              PEnt l{}; PEnt en[16]; REnt pr[64];
+              int nE = Gather(&l, en, 16, pr, 64);
+              if (!l.obj) return;
+
+              if (self.esp) {
+                  NSMutableArray* arr = [NSMutableArray new];
+                  for (int i = 0; i < nE; i++) {
+                      Vec3 h = en[i].pos; h.y += 1.6f;
+                      CGPoint a, b;
+                      if (!W2S(h, &a) || !W2S(en[i].pos, &b)) continue;
+                      ESPBox box = { a, b };
+                      [arr addObject:[NSValue valueWithBytes:&box objCType:@encode(ESPBox)]];
+                  }
+                  [g_esp.boxes setArray:arr];
+                  [g_esp setNeedsDisplay];
+              }
+
+              if (self.aimbot) {
+                  CGPoint me;
+                  if (W2S(l.pos, &me)) {
+                      int best = -1; float bd = 1e9f;
+                      float fov = UIScreen.mainScreen.bounds.size.width * 0.42f;
+                      for (int i = 0; i < nE; i++) {
+                          CGPoint s;
+                          if (!W2S(en[i].pos, &s)) continue;
+                          float d = hypotf(s.x - me.x, s.y - me.y);
+                          if (d < bd && d < fov) { bd = d; best = i; }
+                      }
+                      if (best >= 0) {
+                          CGPoint s;
+                          if (W2S(en[best].pos, &s)) [self aim:s local:l];
+                      } else if (g_aiming) { Touch(0, CGPointZero, false, true); g_aiming = NO; }
+                  }
+              }
+
+              if (self.dodge) [self dodge:l pr:pr n:64];
+          }
+
+          - (void)start {
+              CADisplayLink* link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick)];
+              [link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+          }
+          @end
+
+          static void InstallUI(void) {
+              UIWindowScene* sc = nil;
+              for (UIScene* s in UIApplication.sharedApplication.connectedScenes)
+                  if ([s isKindOfClass:UIWindowScene.class]) { sc = (UIWindowScene*)s; break; }
+              UIWindow* host = sc.windows.firstObject;
+              if (!host) return;
+              CGRect b = host.bounds;
+
+              g_esp = [[ESPView alloc] initWithFrame:b];
+              [host addSubview:g_esp];
+
+              MenuWindow* w = [[MenuWindow alloc] initWithWindowScene:sc];
+              w.frame = b;
+              w.windowLevel = UIWindowLevelAlert + 10;
+              w.backgroundColor = UIColor.clearColor;
+              w.hidden = NO;
+              UIViewController* vc = [UIViewController new];
+              vc.view = [[UIView alloc] initWithFrame:b];
+              vc.view.backgroundColor = UIColor.clearColor;
+              g_panel = [[PanelView alloc] initWithFrame:CGRectMake(b.size.width - 220, 30, 200, 190)];
+              [vc.view addSubview:g_panel];
+              w.rootViewController = vc;
+          }
+
+          __attribute__((constructor))
+          static void entry(void) {
+              dispatch_async(dispatch_get_main_queue(), ^{
+                  InstallUI();
+                  [[Cheat shared] start];
+              });
+          }
+          EOF_SRC
+
+          ls -la
+
+      - name: Install Theos
+        uses: Randomblock1/theos-action@v1
+        with:
+          theos-dir: ${{ github.workspace }}/theos
+
+      - name: ldid
+        run: brew install ldid
+
+      - name: Build
+        run: |
+          make clean
+          make -j4
+
+      - name: Sign and collect
+        run: |
+          mkdir -p dist
+          D=$(find .theos/obj -name 'BrawlCheat.dylib' -not -path '*arm64*' | head -1)
+          [ -z "$D" ] && D=$(find .theos/obj -name 'BrawlCheat.dylib' | head -1)
+          [ -z "$D" ] && { echo "no dylib produced"; exit 1; }
+          cp "$D" dist/BrawlCheat.dylib
+          ldid -S dist/BrawlCheat.dylib
+          file dist/BrawlCheat.dylib
+          shasum -a 256 dist/BrawlCheat.dylib > dist/SHA256SUMS
+          cat dist/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BrawlCheat-dylib
+          path: dist/
+          retention-days: 30

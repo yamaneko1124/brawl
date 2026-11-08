@@ -40,6 +40,13 @@ jobs:
           #import <string.h>
           #import <IOKit/hid/IOHIDEventSystemClient.h>
 
+          #pragma clang diagnostic push
+          #pragma clang diagnostic ignored "-Wmodule-import-in-extern-c"
+          #include <IOKit/hid/IOHIDEvent.h>
+          #pragma clang diagnostic pop
+
+          extern "C" IOHIDEventSystemClientRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
+
           #define NS_BATTLE   "GameCore.Battle"
           #define CLS_BATTLE  "Battle"
           #define CLS_PLAYER  "Player"
@@ -155,24 +162,25 @@ jobs:
               return *(void**)((char*)sf + g_api.field_get_offset(f));
           }
 
-          typedef struct __IOHIDEvent* IOHIDEventRef;
-          typedef struct __IOHIDEventSystemClient* IOHIDEventSystemClientRef;
-
-          extern "C" {
-          IOHIDEventRef IOHIDEventCreateDigitizerFingerEventWithQuality(CFAllocatorRef, AbsoluteTime,
-              uint32_t, uint32_t, IOHIDDigitizerTransducerType, float, float, float, float,
-              float, float, float, Boolean, Boolean, uint32_t);
-          void IOHIDEventSetIntegerValue(IOHIDEventRef, int32_t, int64_t);
-          void IOHIDEventSystemClientDispatchEvent(IOHIDEventSystemClientRef, IOHIDEventRef);
-          }
-
           static IOHIDEventSystemClientRef g_hid;
           static void Touch(int id, CGPoint p, bool down, bool up) {
               if (!g_hid) g_hid = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
               IOHIDEventRef e = IOHIDEventCreateDigitizerFingerEventWithQuality(
                   kCFAllocatorDefault, mach_absolute_time(), 0, id + 1,
-                  kIOHIDDigitizerTransducerTypeFinger, p.x, p.y, 0, 1.0f, 1.0f, 0, 0, 1.0f,
-                  down, up, 0);
+                  kIOHIDDigitizerTransducerTypeFinger,
+                  p.x,    // x
+                  p.y,    // y
+                  0.0f,   // z
+                  1.0f,   // tipPressure
+                  1.0f,   // twist
+                  0.0f,   // minorRadius
+                  0.0f,   // majorRadius
+                  1.0f,   // quality
+                  1.0f,   // density
+                  1.0f,   // irregularity
+                  down,   // range
+                  up,     // touch
+                  0);     // options
               if (!e) return;
               IOHIDEventSetIntegerValue(e, kIOHIDEventFieldIsBuiltIn, 1);
               IOHIDEventSystemClientDispatchEvent(g_hid, e);

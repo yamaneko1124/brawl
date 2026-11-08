@@ -34,6 +34,7 @@ jobs:
           #import <UIKit/UIKit.h>
           #import <Foundation/Foundation.h>
           #import <CoreGraphics/CoreGraphics.h>
+          #import <cmath>
           #import <dlfcn.h>
           #import <mach-o/dyld.h>
           #import <mach/mach_time.h>
@@ -86,18 +87,18 @@ jobs:
           typedef struct FieldInfo       FieldInfo;
 
           typedef struct {
-              Il2CppDomain*         (*domain_get)(void);
+              Il2CppDomain*          (*domain_get)(void);
               const Il2CppAssembly** (*domain_get_assemblies)(Il2CppDomain*, size_t*);
-              Il2CppImage*          (*assembly_get_image)(const Il2CppAssembly*);
-              Il2CppClass*          (*class_from_name)(const Il2CppImage*, const char*, const char*);
-              FieldInfo*            (*class_get_field_from_name)(Il2CppClass*, const char*);
-              size_t                (*field_get_offset)(FieldInfo*);
-              MethodInfo*           (*class_get_method_from_name)(Il2CppClass*, const char*, int);
-              Il2CppObject*         (*runtime_invoke)(MethodInfo*, void*, void**, Il2CppObject**);
-              Il2CppDomain*         (*thread_attach)(Il2CppDomain*);
+              Il2CppImage*           (*assembly_get_image)(const Il2CppAssembly*);
+              Il2CppClass*           (*class_from_name)(const Il2CppImage*, const char*, const char*);
+              FieldInfo*             (*class_get_field_from_name)(Il2CppClass*, const char*);
+              size_t                 (*field_get_offset)(FieldInfo*);
+              MethodInfo*            (*class_get_method_from_name)(Il2CppClass*, const char*, int);
+              Il2CppObject*          (*runtime_invoke)(MethodInfo*, void*, void**, Il2CppObject**);
+              Il2CppDomain*          (*thread_attach)(Il2CppDomain*);
           } Il2CppAPI;
 
-          static Il2CppAPI   g_api;
+          static Il2CppAPI    g_api;
           static Il2CppDomain* g_domain;
 
           static void* Sym(const char* n) {
@@ -117,15 +118,15 @@ jobs:
           static bool IL2CppInit(void) {
               if (g_api.domain_get) return true;
           #define B(f, n) if (!(g_api.f = (__typeof__(g_api.f))Sym(n))) return false
-              B(domain_get,               "il2cpp_domain_get");
-              B(domain_get_assemblies,    "il2cpp_domain_get_assemblies");
-              B(assembly_get_image,       "il2cpp_assembly_get_image");
-              B(class_from_name,          "il2cpp_class_from_name");
-              B(class_get_field_from_name,"il2cpp_class_get_field_from_name");
-              B(field_get_offset,         "il2cpp_field_get_offset");
+              B(domain_get,                "il2cpp_domain_get");
+              B(domain_get_assemblies,     "il2cpp_domain_get_assemblies");
+              B(assembly_get_image,        "il2cpp_assembly_get_image");
+              B(class_from_name,           "il2cpp_class_from_name");
+              B(class_get_field_from_name, "il2cpp_class_get_field_from_name");
+              B(field_get_offset,          "il2cpp_field_get_offset");
               B(class_get_method_from_name,"il2cpp_class_get_method_from_name");
-              B(runtime_invoke,           "il2cpp_runtime_invoke");
-              B(thread_attach,            "il2cpp_thread_attach");
+              B(runtime_invoke,            "il2cpp_runtime_invoke");
+              B(thread_attach,             "il2cpp_thread_attach");
           #undef B
               g_domain = g_api.domain_get();
               if (!g_domain) return false;
@@ -182,10 +183,23 @@ jobs:
               AbsoluteTime ts = MachTimeToAbsolute(mach_absolute_time());
               IOHIDEventRef e = IOHIDEventCreateDigitizerFingerEventWithQuality(
                   kCFAllocatorDefault,
-                  (IOHIDDigitizerEventMask)(kIOHIDDigitizerEventTouch | kIOHIDDigitizerEventPosition),
-                  ts, 0, 0, id + 2, kIOHIDDigitizerTransducerTypeFinger,
-                  down || (!down && !up), down || (!down && !up),
-                  p.x, p.y, 0, 1, 1, 0, 0, 0);
+                  ts,
+                  (uint32_t)(id + 2),
+                  (uint32_t)(id + 2),
+                  (uint32_t)(kIOHIDDigitizerEventTouch | kIOHIDDigitizerEventPosition),
+                  (IOHIDFloat)p.x,
+                  (IOHIDFloat)p.y,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  1,
+                  1,
+                  (Boolean)(down || (!down && !up)),
+                  (Boolean)(down || (!down && !up)),
+                  0);
               if (e) {
                   IOHIDEventSetIntegerValue(e, kIOHIDEventFieldIsBuiltIn, 1);
                   IOHIDEventSystemClientDispatchEvent(g_hid, e);
@@ -241,7 +255,7 @@ jobs:
               CGContextSetLineWidth(ctx, 2);
               for (NSValue* v in _boxes) {
                   ESPBox b; [v getValue:&b];
-                  float w = fabsf(b.top.x - b.bot.x) * 0.5f;
+                  float w = fabsf((float)(b.top.x - b.bot.x)) * 0.5f;
                   CGContextStrokeRect(ctx, CGRectMake(b.bot.x - w, b.top.y, w * 2, b.bot.y - b.top.y));
               }
           }
@@ -298,9 +312,9 @@ jobs:
           - (void)toggled:(UISwitch*)sw {
               Cheat* c = [Cheat shared];
               switch (sw.tag) {
-                  case 0: c.esp     = sw.isOn; g_esp.hidden = !sw.isOn; break;
-                  case 1: c.aimbot  = sw.isOn; break;
-                  case 2: c.dodge   = sw.isOn; break;
+                  case 0: c.esp    = sw.isOn; g_esp.hidden = !sw.isOn; break;
+                  case 1: c.aimbot = sw.isOn; break;
+                  case 2: c.dodge  = sw.isOn; break;
               }
           }
           @end
@@ -315,9 +329,9 @@ jobs:
                   for (size_t i = 0; i < plArr->len; i++) {
                       void* obj = plArr->vec[i];
                       if (!obj) continue;
-                      int team = Rd<int>(obj, oPT);
-                      Vec3 pos = Rd<Vec3>(obj, oPP);
-                      float hp = Rd<float>(obj, oPH);
+                      int team   = Rd<int>(obj, oPT);
+                      Vec3 pos   = Rd<Vec3>(obj, oPP);
+                      float hp   = Rd<float>(obj, oPH);
                       if (hp <= 0) continue;
                       if (team == 0) { local->obj = obj; local->pos = pos; local->team = team; local->hp = hp; }
                       else if (nE < maxE) { en[nE++] = {obj, pos, team, hp}; }
@@ -354,8 +368,8 @@ jobs:
               oPH = Off(kPlayer, FLD_P_HP);
               if (kBattle) { oBPl = Off(kBattle, FLD_B_PLAYERS); oBPr = Off(kBattle, FLD_B_PROJS); }
               if (kProj)   { oRP  = Off(kProj,   FLD_R_POS);     oRV  = Off(kProj,   FLD_R_VEL); }
-              mMain  = g_api.class_get_method_from_name(kCam, "get_main",          0);
-              mW2S   = g_api.class_get_method_from_name(kCam, "WorldToScreenPoint", 1);
+              mMain  = g_api.class_get_method_from_name(kCam, "get_main",           0);
+              mW2S   = g_api.class_get_method_from_name(kCam, "WorldToScreenPoint",  1);
               g_ready = (mMain && mW2S && oPP);
               return g_ready;
           }
